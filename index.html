@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Burger Stop</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:#fff8f0;color:#2b1d14}
+header{background:#c0392b;color:#fff;padding:18px;text-align:center}header h1{margin:0}
+main{max-width:920px;margin:auto;padding:16px;display:grid;gap:16px;grid-template-columns:1.3fr 1fr}
+@media(max-width:700px){main{grid-template-columns:1fr}}
+.card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 4px #0002}
+.item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #eee;gap:8px}
+button{background:#c0392b;color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:14px}
+button.alt{background:#ddd;color:#222;padding:3px 9px}
+button:disabled{opacity:.5}
+input,textarea{width:100%;padding:8px;margin:4px 0 10px;border:1px solid #ccc;border-radius:8px;font:inherit}
+.row{display:flex;justify-content:space-between;margin:4px 0}
+#msg{margin-top:10px;font-weight:600}.err{color:#b00020}.ok{color:#1b7f3b}
+</style></head><body>
+<header><h1>&#127828; Burger Stop</h1><p>Order online &mdash; we deliver to your door</p></header>
+<main>
+<section class="card"><h2>Menu</h2><div id="menu">Loading&hellip;</div></section>
+<section class="card"><h2>Your order</h2>
+<div id="cart"></div>
+<div class="row"><span>Total</span><b id="sub"></b></div>
+<label>Name *<input id="name" maxlength="100"></label>
+<label>Phone *<input id="phone" type="tel"></label>
+<label>Delivery address *<textarea id="address" rows="2" maxlength="300"></textarea></label>
+<label>Note for the staff (optional)<textarea id="note" rows="2" maxlength="300" placeholder="e.g. no onions, ring the bell"></textarea></label>
+<button id="send" style="width:100%">Place order</button>
+<div id="msg"></div>
+</section>
+</main>
+<script>
+const CUR='$';let menu=[],cart={};
+// Address of the backend server. Change it to your Render backend address (no slash at the end),
+// for example https://burger-server.onrender.com
+const SERVER_URL = 'https://range-light-penguin.abasthan.app';
+const API = SERVER_URL.replace(/\/+$/, '');
+const $=id=>document.getElementById(id);
+const money=c=>CUR+(c/100).toFixed(2);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function say(t,ok){const m=$('msg');m.className=ok?'ok':'err';m.innerHTML=t}
+async function init(){
+  try{menu=await(await fetch(API+'/api/menu')).json();
+    $('menu').innerHTML=menu.map(m=>'<div class="item"><span>'+esc(m.name)+'<br><small>'+money(m.price)+'</small></span><button data-add="'+esc(m.id)+'">Add</button></div>').join('');
+  }catch(e){$('menu').textContent='Could not reach the server. Is it running?'}
+  renderCart();
+}
+function renderCart(){
+  const ids=Object.keys(cart);let sub=0;
+  $('cart').innerHTML=ids.length?ids.map(id=>{const m=menu.find(x=>x.id===id);sub+=m.price*cart[id];
+    return '<div class="item"><span>'+esc(m.name)+'</span><span><button class="alt" data-dec="'+esc(id)+'">&minus;</button> '+cart[id]+' <button class="alt" data-add="'+esc(id)+'">+</button></span></div>'}).join(''):'<p>Your cart is empty.</p>';
+  $('sub').textContent=money(sub);
+}
+document.addEventListener('click',e=>{
+  const a=e.target.dataset.add,d=e.target.dataset.dec;
+  if(a){cart[a]=Math.min((cart[a]||0)+1,50);renderCart()}
+  if(d){cart[d]--;if(cart[d]<1)delete cart[d];renderCart()}
+});
+$('send').onclick=async()=>{
+  const items=Object.keys(cart).map(id=>({id,qty:cart[id]}));
+  const name=$('name').value.trim(),phone=$('phone').value.trim(),address=$('address').value.trim();
+  if(!items.length)return say('Add something to your cart first.');
+  if(!name)return say('Please enter your name.');
+  if(phone.replace(/\D/g,'').length<7)return say('Please enter a valid phone number.');
+  if(!address)return say('Please enter your delivery address.');
+  $('send').disabled=true;
+  try{
+    const r=await fetch(API+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({items,name,phone,address,note:$('note').value})});
+    const o=await r.json();
+    if(!r.ok)throw new Error(o.error||'Something went wrong.');
+    cart={};$('note').value='';renderCart();
+    say('Order <b>'+esc(o.id)+'</b> received!<br>Total <b>'+money(o.total)+'</b>',true);
+  }catch(e){say(esc(e instanceof TypeError?'Cannot reach the server. Please try again.':e.message))}
+  $('send').disabled=false;
+};
+init();
+</script></body></html>
